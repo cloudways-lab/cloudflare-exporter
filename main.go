@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -100,14 +101,15 @@ func filterExcludedZones(all []cloudflare.Zone, exclude []string) []cloudflare.Z
 }
 
 func fetchMetrics() {
+	fmt.Println("fetchMetrics")
 	var wg sync.WaitGroup
 	zones := fetchZones()
-	accounts := fetchAccounts()
+	// accounts := fetchAccounts()
 	filteredZones := filterExcludedZones(filterZones(zones, getTargetZones()), getExcludedZones())
 
-	for _, a := range accounts {
-		go fetchWorkerAnalytics(a, &wg)
-	}
+	// for _, a := range accounts {
+	// 	go fetchWorkerAnalytics(a, &wg)
+	// }
 
 	// Make requests in groups of cfgBatchSize to avoid rate limit
 	// 10 is the maximum amount of zones you can request at once
@@ -120,9 +122,10 @@ func fetchMetrics() {
 		targetZones := filteredZones[:sliceLength]
 		filteredZones = filteredZones[len(targetZones):]
 
-		go fetchZoneAnalytics(targetZones, &wg)
+		// go fetchZoneAnalytics(targetZones, &wg)
 		go fetchZoneColocationAnalytics(targetZones, &wg)
-		go fetchLoadBalancerAnalytics(targetZones, &wg)
+		go fetchZoneCalendarMonthTotals(targetZones, &wg)
+		// go fetchLoadBalancerAnalytics(targetZones, &wg)
 	}
 
 	wg.Wait()

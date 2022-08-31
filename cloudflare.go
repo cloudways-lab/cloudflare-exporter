@@ -388,11 +388,7 @@ query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 	return &resp, nil
 }
 
-func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
-	now := time.Now().Add(-time.Duration(cfgScrapeDelay) * time.Second).UTC()
-	s := 60 * time.Second
-	now = now.Truncate(s)
-	now1mAgo := now.Add(-60 * time.Second)
+func fetchColoTotals(zoneIDs []string, from time.Time, to time.Time) (*cloudflareResponseColo, error) {
 
 	request := graphql.NewRequest(`
 	query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
@@ -410,7 +406,6 @@ func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
 						dimensions {
 							clientRequestHTTPHost
 							coloCode
-							datetime
 						}
 						sum {
 							edgeResponseBytes
@@ -420,7 +415,7 @@ func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
 				}
 			}
 		}
-`)
+	`)
 	if len(cfgCfAPIToken) > 0 {
 		request.Header.Set("Authorization", "Bearer "+cfgCfAPIToken)
 	} else {
@@ -428,8 +423,53 @@ func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
 		request.Header.Set("X-AUTH-KEY", cfgCfAPIKey)
 	}
 	request.Var("limit", 9999)
-	request.Var("maxtime", now)
-	request.Var("mintime", now1mAgo)
+	request.Var("maxtime", from)
+	request.Var("mintime", to)
+	request.Var("zoneIDs", zoneIDs)
+
+	ctx := context.Background()
+	graphqlClient := graphql.NewClient(cfGraphQLEndpoint)
+	var resp cloudflareResponseColo
+	if err := graphqlClient.Run(ctx, request, &resp); err != nil {
+		log.Error(err)
+		return nil, err
+	}
+
+	return &resp, nil
+}
+func fetchMonthTotals(zoneIDs []string, from time.Time, to time.Time) (*cloudflareResponseColo, error) {
+
+	request := graphql.NewRequest(`
+	query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
+		viewer {
+			zones(filter: { zoneTag_in: $zoneIDs }) {
+				zoneTag
+				httpRequestsAdaptiveGroups(
+					limit: $limit
+					filter: { datetime_geq: $mintime, datetime_lt: $maxtime }
+					) {
+						count
+						dimensions {
+							clientRequestHTTPHost
+						}
+						sum {
+							edgeResponseBytes
+							visits
+						}
+					}
+				}
+			}
+		}
+	`)
+	if len(cfgCfAPIToken) > 0 {
+		request.Header.Set("Authorization", "Bearer "+cfgCfAPIToken)
+	} else {
+		request.Header.Set("X-AUTH-EMAIL", cfgCfAPIEmail)
+		request.Header.Set("X-AUTH-KEY", cfgCfAPIKey)
+	}
+	request.Var("limit", 9999)
+	request.Var("maxtime", from)
+	request.Var("mintime", to)
 	request.Var("zoneIDs", zoneIDs)
 
 	ctx := context.Background()
